@@ -68,6 +68,9 @@ You can use this script to provision a fresh Ubuntu Server or build a VM templat
      ```bash
      ./install.sh
      ```
+5. **Reboot the server**
+
+   - Script will start it's job with the next boot 
 
 ---
 
