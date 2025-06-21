@@ -1,0 +1,239 @@
+
+create_script_environment() {
+
+    if [ ! -d "$LOCK_FOLDER" ]; then
+        # -p will create parent folder, which is log folder
+        mkdir -p "$LOCK_FOLDER" 
+    fi
+}
+
+read_config_for_initial_user() {
+
+    local yaml_file=$CONFIG_FILE
+    local parent_key="initial_user"
+    local child_key1="name"
+    local yaml_value1
+
+    if [[ -z $yaml_file || -z $parent_key || -z $child_key1 ]]; then
+        printf "Usage: %s <yaml_file> <parent_key> <child_key1>\n" "$(basename "$0")" >&2
+        return 1
+    fi
+
+    # Get user name
+    if ! yaml_value1=$(read_yaml_value "$yaml_file" "$parent_key" "$child_key1"); then
+        printf "Failed to retrieve value for '%s -> %s' from '%s'.\n" "$parent_key" "$child_key1" "$yaml_file" >&2
+        return 1
+    else
+        initial_user_name=$yaml_value1
+    
+    fi
+
+    log_message "INFO" "environment: read_config_for_initial_user: value for ${parent_key} -> ${child_key1} = ${yaml_value1}, ${child_key2} = ${yaml_value2}, ${child_key3} = ${yaml_value3}"
+
+    return 0
+}
+
+read_config_for_tech_user() {
+
+    local yaml_file=$CONFIG_FILE
+    local parent_key="tech_user"
+    local child_key1="name"
+    local child_key2="password"
+    local child_key3="home"
+    local yaml_value1
+    local yaml_value2
+    local yaml_value3
+
+    if [[ -z $yaml_file || -z $parent_key || -z $child_key1 || -z $child_key2 || -z $child_key3 ]]; then
+        printf "Usage: %s <yaml_file> <parent_key> <child_key1> <child_key2> <child_key3>\n" "$(basename "$0")" >&2
+        return 1
+    fi
+
+    # Get user name
+    if ! yaml_value1=$(read_yaml_value "$yaml_file" "$parent_key" "$child_key1"); then
+        printf "Failed to retrieve value for '%s -> %s' from '%s'.\n" "$parent_key" "$child_key1" "$yaml_file" >&2
+        return 1
+    else
+        admin_user_name=$yaml_value1
+    fi
+
+    # Get user password_factor
+    if ! yaml_value2=$(read_yaml_value "$yaml_file" "$parent_key" "$child_key2"); then
+        printf "Failed to retrieve value for '%s -> %s' from '%s'.\n" "$parent_key" "$child_key2" "$yaml_file" >&2
+        return 1
+    else
+        admin_user_password_factor=$yaml_value2
+    fi
+
+    # Get user home_factor
+    if ! yaml_value3=$(read_yaml_value "$yaml_file" "$parent_key" "$child_key3"); then
+        printf "Failed to retrieve value for '%s -> %s' from '%s'.\n" "$parent_key" "$child_key3" "$yaml_file" >&2
+        return 1
+    else
+        admin_user_home_factor=$yaml_value3
+    fi
+
+    log_message "INFO" "environment: read_config_for_tech_user: value for ${parent_key} -> ${child_key1} = ${yaml_value1}, ${child_key2} = ${yaml_value2}, ${child_key3} = ${yaml_value3}"
+
+    return 0
+}
+
+read_config_for_connect_user() {
+
+    local yaml_file=$CONFIG_FILE
+    local parent_key="connect_user"
+    local child_key1="name"
+    local child_key2="password"
+    local child_key3="home"
+    local yaml_value1
+    local yaml_value2
+    local yaml_value3
+
+    if [[ -z $yaml_file || -z $parent_key || -z $child_key1 || -z $child_key2 || -z $child_key3 ]]; then
+        printf "Usage: %s <yaml_file> <parent_key> <child_key1> <child_key2> <child_key3>\n" "$(basename "$0")" >&2
+        return 1
+    fi
+
+    # Get user name
+    if ! yaml_value1=$(read_yaml_value "$yaml_file" "$parent_key" "$child_key1"); then
+        printf "Failed to retrieve value for '%s -> %s' from '%s'.\n" "$parent_key" "$child_key1" "$yaml_file" >&2
+        return 1
+    else
+        connect_user_name=$yaml_value1
+    fi
+
+    # Get user password_factor
+    if ! yaml_value2=$(read_yaml_value "$yaml_file" "$parent_key" "$child_key2"); then
+        printf "Failed to retrieve value for '%s -> %s' from '%s'.\n" "$parent_key" "$child_key2" "$yaml_file" >&2
+        return 1
+    else
+        connect_user_password_factor=$yaml_value2
+    fi
+
+    # Get user home_factor
+    if ! yaml_value3=$(read_yaml_value "$yaml_file" "$parent_key" "$child_key3"); then
+        printf "Failed to retrieve value for '%s -> %s' from '%s'.\n" "$parent_key" "$child_key3" "$yaml_file" >&2
+        return 1
+    else
+        connect_user_home_factor=$yaml_value3
+    fi
+
+    log_message "INFO" "environment: read_config_for_connect_user: value for ${parent_key} -> ${child_key1} = ${yaml_value1}, ${child_key2} = ${yaml_value2}, ${child_key3} = ${yaml_value3}"
+
+    return 0
+}
+
+read_config_ssh() {
+
+    local yaml_file=$CONFIG_FILE
+    local parent_key="ssh_settings"
+    local child_key1="port"
+    local yaml_value1
+
+    if [[ -z $yaml_file || -z $parent_key || -z $child_key1 ]]; then
+        log_message "ERROR" "Usage: <yaml_file> <parent_key> <child_key1>"
+        return 1
+    fi
+
+    # Get port number
+    if ! yaml_value1=$(read_yaml_value "$yaml_file" "$parent_key" "$child_key1"); then
+
+        log_message "ERROR" "Failed to retrieve value for: ${parent_key} ${child_key1} ${yaml_file}"
+        return 1
+    else
+        ssh_port=$yaml_value1
+    fi
+
+    return 0
+}
+
+internet_connection_test() {
+
+    # TODO - currently looking for internet connection (I don't have local repo, so it is taken from internet), but in the future this should be combined with local repository connection check
+    if [ "$(ping -c 1 8.8.8.8 | grep '100% packet loss' )" = "" ]; then
+        echo true
+    else
+        echo false
+    fi
+}
+
+#================================ BASIC PACKAGES INSTALLATION =================================
+
+initial_update() {
+
+    printf "############ INITIAL SYSTEM UPDATE ############\n"
+
+    if [ ! -f "$LOCK_FILE_INITIAL_UPDATE" ]; then
+
+        log_entry "Initial system update - details in ${LOG_INITIAL_UPDATE_FILE}"
+
+        apt -y update | tee -a "$LOG_INITIAL_UPDATE_FILE" &&
+        apt -y upgrade | tee -a "$LOG_INITIAL_UPDATE_FILE" &&
+        apt -y dist-upgrade | tee -a "$LOG_INITIAL_UPDATE_FILE" &&
+        apt -y autoclean | tee -a "$LOG_INITIAL_UPDATE_FILE" &&
+        apt -y autoremove | tee -a "$LOG_INITIAL_UPDATE_FILE" &&
+
+        touch "$LOCK_FILE_INITIAL_UPDATE"
+    
+    else
+        log_entry_error "Initial system update was allready done, skipping this step"
+    fi
+}
+
+basic_packages_installation() {
+
+    printf "############ BASIC PACKAGES INSTALLATION ############\n"
+
+    if [ ! -f "$LOCK_FILE_BASIC_PACKAGES" ]; then
+
+        apt_install_wrapper git | tee -a "$LOG_BASIC_PACKAGES_FILE"
+        apt_install_wrapper curl | tee -a "$LOG_BASIC_PACKAGES_FILE"
+        apt_install_wrapper clamav | tee -a "$LOG_BASIC_PACKAGES_FILE"
+        apt_install_wrapper net-tools | tee -a "$LOG_BASIC_PACKAGES_FILE"
+        apt_install_wrapper sysstat | tee -a "$LOG_BASIC_PACKAGES_FILE"
+        apt_install_wrapper iotop | tee -a "$LOG_BASIC_PACKAGES_FILE"
+        apt_install_wrapper zip unzip | tee -a "$LOG_BASIC_PACKAGES_FILE"
+        apt_install_wrapper htop | tee -a "$LOG_BASIC_PACKAGES_FILE"
+        apt_install_wrapper vim | tee -a "$LOG_BASIC_PACKAGES_FILE"
+        apt_install_wrapper make | tee -a "$LOG_BASIC_PACKAGES_FILE"
+        apt_install_wrapper tmux | tee -a "$LOG_BASIC_PACKAGES_FILE"
+        apt_install_wrapper nfs-common | tee -a "$LOG_BASIC_PACKAGES_FILE"
+        apt_install_wrapper restic | tee -a "$LOG_BASIC_PACKAGES_FILE"
+
+        touch "$LOCK_FILE_BASIC_PACKAGES"
+
+    else
+        log_entry_error "Initial system update was allready done, skipping this step"
+    fi
+}
+
+essentials_wrapper() {
+
+    initial_update
+    basic_packages_installation
+}
+
+read_config_file_wrapper() {
+
+    read_config_for_initial_user
+    read_config_for_connect_user
+    read_config_for_tech_user
+    read_config_ssh
+}
+
+environment_facade() {
+
+    log_message "INFO" "environment: environment_facade: starting environment actions..."
+
+    create_script_environment
+    read_config_file_wrapper
+
+    internet_connection=$(internet_connection_test)
+
+    if [[ "$internet_connection" == "true" ]]; then
+
+        essentials_wrapper
+    else
+        log_entry_error "No internet connection"
+    fi
+}

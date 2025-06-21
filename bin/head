@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# SETTINGS
+
+HOSTNAME=$(hostname)
+RUNTIME_TIMESTAMP="$(date +"%Y-%m-%d_%H-%M-%S")"
+LOG_FOLDER="/var/log/ubuntu_init"
+LOG_MAIN_FILE="${LOG_FOLDER}/ubuntu_init-${HOSTNAME}_${RUNTIME_TIMESTAMP}.main.log"
+# LOG_WARNINGS_FILE="${LOG_FOLDER}/ubuntu_init-$HOSTNAME_$RUNTIME_TIMESTAMP.errors.log"
+LOG_INITIAL_UPDATE_FILE="${LOG_FOLDER}/ubuntu_init-${HOSTNAME}_${RUNTIME_TIMESTAMP}.initial-update.log"
+LOG_BASIC_PACKAGES_FILE="${LOG_FOLDER}/ubuntu_init-${HOSTNAME}_${RUNTIME_TIMESTAMP}.basic-packages.log"
+# DISTRO=$(cat /etc/os-release | grep "DISTRIB_ID" | awk -F"=" '{print $2}')
+LOCK_FOLDER="${LOG_FOLDER}/lock"
+LOCK_FILE="${LOCK_FOLDER}/ubuntu_init.lock"
+LOCK_FILE_USER="${LOCK_FOLDER}/ubuntu_init_user.lock"
+LOCK_FILE_HARDENING="${LOCK_FOLDER}/eth_hardening.lock"
+LOCK_FILE_INITIAL_UPDATE="${LOCK_FOLDER}/initial_update.lock"
+LOCK_FILE_BASIC_PACKAGES="${LOCK_FOLDER}/basic_packages.lock"
+LOCK_FILE_SSH_PORT="${LOCK_FOLDER}/ssh_port.lock"
+OUTPUT_FILE="${LOG_FOLDER}/output"
+REPO_DIR="/root/ubuntu_init/repo"
+SSH_KEY="$REPO_DIR/id_rsa.pub"
+CONFIG_FILE="$REPO_DIR/ubuntu_init.yml"
+SSH_CONFIG="/etc/ssh/sshd_config"
+CRON_JOB="@reboot sleep 10 && /root/ubuntu_init/ubuntu_init.sh"
+
+# DYNAMIC VARIABLES POPULATED BY YAML
+
+initial_user_name=""
+admin_user_name=""
+admin_user_password_factor=""
+admin_user_home_factor=""
+connect_user_name=""
+connect_user_password_factor=""
+connect_user_home_factor=""
+ssh_port=""

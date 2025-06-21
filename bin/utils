@@ -1,0 +1,217 @@
+
+log_message() {
+    #Example:
+    #log_message "INFO" "Operation completed successfully."
+    #log_message "WARN" "Disk space is running low."
+    #log_message "ERROR" "Failed to connect to database."
+
+    local message_type="$1"
+    local message="$2"
+
+    # Definicje kolorów ANSI
+    local green="\033[1;32m"
+    local yellow="\033[1;33m"
+    local red="\033[1;31m"
+    local reset="\033[0m"
+
+    # Wybierz odpowiedni kolor na podstawie typu wiadomości
+    case "$message_type" in
+        "INFO") local color="$green" ;;
+        "WARN"|"WARNING") local color="$yellow" ;;
+        "ERROR") local color="$red" ;;
+        *) local color="$reset" ;;  # Domyślny kolor bez formatowania
+    esac
+
+    # Formatowanie i wypisywanie wiadomości z kolorem
+    printf "${color}%s - type:[%s] - message:[%s]${reset}\n" \
+        "$(date '+%Y-%m-%d %H:%M:%S')" "$message_type" "$message" | tee -a "$LOG_MAIN_FILE"
+}
+
+acquire_lock() {
+    if [[ -e "$LOCK_FILE" ]]; then  # Sprawdzenie, czy plik blokady istnieje
+        if kill -0 "$(cat "$LOCK_FILE")" 2>/dev/null; then  # Sprawdzenie, czy proces w blokadzie jest aktywny
+            log_message "ERROR" "Another instance is running. Exiting."
+            return 1  # Wyjście, jeśli proces działa
+        else
+            log_message "ERROR" "Stale lock detected. Cleaning up."
+            rm -f "$LOCK_FILE"  # Usunięcie starej blokady
+        fi
+    fi
+    echo "$$" > "$LOCK_FILE"  # Zapisanie PID bieżącego procesu do blokady
+    return 0
+}
+
+release_lock() {
+    if [[ -f "$LOCK_FILE" && "$(cat "$LOCK_FILE")" == "$$" ]]; then
+        rm -f "$LOCK_FILE"  # Usunięcie blokady, jeśli należy do tego procesu
+    fi
+}
+
+ami_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        log_message "ERROR" "You need to be root!"
+        return 1
+    fi
+    log_message "INFO" "You are root! Awesome!"
+    return 0
+}
+
+preflight_checks() {
+    if ! acquire_lock; then # Próba uzyskania blokady
+        exit 1
+    fi
+
+    if ! ami_root; then
+        exit 1
+    fi
+}
+
+read_yaml_value() {
+    local yaml_file=$1
+    local parent_key=$2
+    local child_key=$3
+    local value
+    # local indent_level=-1
+
+    if [[ ! -f $yaml_file ]]; then
+        printf "Error: Configuration file '%s' does not exist.\n" "$yaml_file" >&2
+        return 1
+    fi
+
+    # Use awk to parse YAML hierarchy
+    value=$(awk -v parent="$parent_key" -v child="$child_key" '
+        BEGIN { found_parent = 0; found_child = 0; parent_indent = -1 }
+
+        # Function to remove leading whitespace
+        function trim(s) { sub(/^[ \t]+/, "", s); return s }
+
+        {
+            line = trim($0)  # Remove leading spaces from the line
+            if (match(line, /^([a-zA-Z0-9_-]+):[ \t]?(.*)$/, arr)) {
+                key = arr[1]
+                val = arr[2]
+
+                # Detect parent key level
+                if (key == parent) {
+                    found_parent = 1
+                    parent_indent = index($0, key) - 1  # Save indentation level
+                    next
+                }
+
+                # Detect child key inside the parent key
+                if (found_parent && index($0, key) > parent_indent) {
+                    if (key == child) {
+                        print val
+                        found_child = 1
+                        exit
+                    }
+                }
+
+                # Stop if we exit the parent block
+                if (found_parent && index($0, key) <= parent_indent) {
+                    found_parent = 0
+                }
+            }
+        }
+    ' "$yaml_file")
+
+    if [[ -z $value ]]; then
+        printf "Error: Key '%s -> %s' not found in '%s'.\n" "$parent_key" "$child_key" "$yaml_file" >&2
+        return 1
+    fi
+
+    printf "%s\n" "$value"
+    return 0
+}
+
+unpack_archive() {
+    local archive=$1
+
+    tar -xf "$archive"
+}
+
+generate_password() {
+    chars=abcdefghijklmnopqrstuvwyzx1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ
+    for i in {1..46} ; do
+        echo -n "${chars:RANDOM%${#chars}:1}"
+    done
+}
+
+remove_cron_job() {
+    local job_pattern="$1"
+    local tmp_cron; tmp_cron=$(mktemp) || { log_message "ERROR" "Failed to create tmp file"; return 1; }
+
+    if ! crontab -l -u root > "$tmp_cron" 2>/dev/null; then
+        log_message "ERROR" "Failed to create root crontab"
+        rm -f "$tmp_cron"
+        return 1
+    fi
+
+    if ! grep -qF "$job_pattern" "$tmp_cron"; then
+        log_message "ERROR" "No cronjob: ${job_pattern} found in crontab"
+        rm -f "$tmp_cron"
+        return 1
+    fi
+
+    sed -i "\|$job_pattern|d" "$tmp_cron"
+
+    if ! crontab -u root "$tmp_cron"; then
+        log_message "ERROR" "New crontab save failed"
+        rm -f "$tmp_cron"
+        return 1
+    fi
+
+    log_message "ERROR" "Success, cronjob: ${job_pattern} was removed from crontab"
+    rm -f "$tmp_cron"
+}
+
+package_existence_control() {
+
+    # This function is made to return value: true or false depending on the existence on the system of
+    # package that we want to check. Use this function to determinate weather install package or not.
+
+    # Example: package_existence_control $PACKAGE_NAME
+    # PKG_OK variable will get return value from dpkg-query "install ok installed" if package from variable PACKAGE_NAME exists
+
+    PKG_OK=$(dpkg-query -W --showformat='${Status}\n' $1 | grep "install ok installed")
+    if [ "" == "$PKG_OK" ]; then
+        echo false
+    else
+        echo true
+    fi
+}
+
+apt_install_wrapper() {
+
+    # use this function to install packages from repository
+    # this function is also responsible for messages and logs
+    # pass $PACKAGE NAME as $1 argument 
+    # example: package_installation $PACKAGE_NAME
+
+    # First check if package is realy missing:
+    # package_existence_control will give you value true or false weather package is installed or not
+
+    for arg in "$@"; do
+        PACKAGE_EXISTENCE=$(package_existence_control $arg)
+        if [ $PACKAGE_EXISTENCE == false ]; then
+            # MESSAGE="Package $arg does not exist, performing installation..."
+            sudo apt install -y $arg
+            PACKAGE_EXISTENCE=$(package_existence_control $arg)
+            if [ $PACKAGE_EXISTENCE  == true ]; then
+                MESSAGE="Package $arg installed successfully!"
+                log_message "INFO" $MESSAGE
+            else
+                MESSAGE_ERROR="$arg not installed!"
+                log_message "ERROR" $MESSAGE_ERROR
+            fi
+        else
+            log_message "WARN" "Package $arg already installed!"
+        fi
+    done
+}
+
+final_reboot() {
+
+    log_message "INFO" "Going for final reboot..."
+    reboot
+}

@@ -1,0 +1,115 @@
+
+
+ssh_change_default_port() {
+
+    local ssh_port=$1
+
+
+    if [ -f "$LOCK_FILE_SSH_PORT" ]; then
+
+        log_message "WARN" "Looks like default ssh port had been already changed!!!"
+    else
+
+        log_message "INFO" "hardening: hardening_facade: changing default ssh port"
+        log_message "INFO" "Backup of default sshd settings: $SSH_CONFIG to $SSH_CONFIG.bkp"
+        cp -v $SSH_CONFIG $SSH_CONFIG.bkp
+        sed -i "s/#Port\ 22/Port\ $ssh_port/g" $SSH_CONFIG
+        log_message "INFO" "Restarting sshd due to changes in $SSH_CONFIG"
+        systemctl restart ssh
+
+        touch $LOCK_FILE_SSH_PORT
+    fi
+}
+
+ssh_prevent_root_login() {
+
+    # set PermitRootLogin to "no"
+    if grep -q "^PermitRootLogin" "$SSH_CONFIG"; then
+        # if the line exists, change value
+        sudo sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' "$SSH_CONFIG"
+    else
+        # if line doesn't exist, add new line
+        echo "PermitRootLogin no" >> "$SSH_CONFIG"
+    fi
+}
+
+ssh_prevent_password_login() {
+
+    if grep -q "^PasswordAuthentication" "$SSH_CONFIG"; then
+        sudo sed -i 's/^PasswordAuthentication.*/PasswordAuthentication no/' "$SSH_CONFIG"
+    else
+        echo "PasswordAuthentication no" >> "$SSH_CONFIG"
+    fi
+
+    if grep -q "^PubkeyAuthentication" "$SSH_CONFIG"; then
+        sudo sed -i 's/^PubkeyAuthentication.*/PubkeyAuthentication yes/' "$SSH_CONFIG"
+    else
+        echo "PubkeyAuthentication yes" >> "$SSH_CONFIG"
+    fi
+}
+
+ssh_install_pub_key() {
+
+    local ssh_user=$1
+    local ssh_dir="/home/$ssh_user/.ssh"
+
+    mkdir -p "$ssh_dir"
+    chmod 700 "$ssh_dir"
+
+    if [ -f "$SSH_KEY" ]; then
+        cp "$SSH_KEY" "$ssh_dir/authorized_keys"
+        chmod 600 "$ssh_dir/authorized_keys"
+        chown -R "$ssh_user:$ssh_user" "$ssh_dir"
+        log_message "INFO" "ssh key was installed for ${ssh_user}"
+    else
+        log_message "ERROR" "ssh key was not found: ${SSH_KEY}"
+        exit 1
+    fi
+}
+
+disable_sudo_for_user() {
+
+    local username=$1
+
+    if [ -z "$username" ]; then
+        echo "Użycie: disable_sudo_for_user <nazwa_użytkownika>"
+        return 1
+    fi
+
+    if ! id "$username" &>/dev/null; then
+        echo "Błąd: Użytkownik '$username' nie istnieje!"
+        return 1
+    fi
+
+    if getent group sudo &>/dev/null; then
+        gpasswd -d "$username" sudo &>/dev/null
+    fi
+
+    if getent group wheel &>/dev/null; then
+        gpasswd -d "$username" wheel &>/dev/null
+    fi
+
+    if [ -f "/etc/sudoers.d/$username" ]; then
+        rm -f "/etc/sudoers.d/$username"
+    fi
+
+    sed -i "/^$username /d" /etc/sudoers
+
+    log_message "INFO" "User: ${username} can no longer use sudo"
+}
+
+hardening_facade() {
+
+    if [ ! -f "$LOCK_FILE_HARDENING" ]; then
+        log_message "INFO" "hardening: hardening_facade: starting hardening process..."
+        # remove_init_user
+        ssh_change_default_port "$ssh_port"
+        ssh_prevent_root_login
+        ssh_prevent_password_login
+        ssh_install_pub_key "$connect_user_name"
+        disable_sudo_for_user "$initial_user_name"
+        disable_sudo_for_user "$connect_user_name"
+        disable_sudo_for_user "$admin_user_name"
+        touch "$LOCK_FILE_HARDENING"
+    fi
+}

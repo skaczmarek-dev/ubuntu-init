@@ -1,0 +1,66 @@
+
+create_user() {
+
+    local username=$1
+    local home_factor=$2
+    local password_factor=$3
+
+    if id "$username" &>/dev/null; then
+        log_message "WARN" "User '$username' already exists, skipping creation step."
+        return 1
+    fi
+
+    if [[ "$home_factor" == "yes" ]]; then
+        sudo adduser --home "/home/${username}" --shell /bin/bash "$username"
+        log_message "INFO" "User ${username} successfully created with home folder: /home/${username}"
+    else
+        sudo adduser --no-create-home --shell /bin/bash "$username"
+        log_message "INFO" "User ${username} successfully created without home folder"
+    fi
+
+    if [[ "$password_factor" == "yes" ]]; then
+        local password=$(generate_password)
+        echo "$username:$password" | sudo chpasswd
+        echo "$username:$password" >> "$OUTPUT_FILE"
+        log_message "INFO" "Password set for user '$username'."
+    else
+        sudo passwd -l "$username"
+        log_message "INFO" "User ${username} created with login disabled (no password)."
+    fi
+}
+
+create_admin_user() {
+    log_message "INFO" "user: create_admin_user: creating admin user with parameters: admin_user_name: ${admin_user_name} admin_user_home_factor: ${admin_user_home_factor} admin_user_password_factor: ${admin_user_password_factor}"
+    create_user "$admin_user_name" "$admin_user_home_factor" "$admin_user_password_factor"
+}
+
+create_connect_user() {
+    log_message "INFO" "user: create_connect_user: creating connect user with parameters: connect_user_name: ${connect_user_name} connect_user_home_factor: ${connect_user_home_factor} connect_user_password_factor: ${connect_user_password_factor}"
+    create_user "$connect_user_name" "$connect_user_home_factor" "$connect_user_password_factor"
+}
+
+set_root_password() {
+    local password=$(generate_password)
+    echo "root:$password" | sudo chpasswd
+    echo "root:$password" >> "$OUTPUT_FILE"
+    log_message "INFO" "Password set for user 'root'."
+}
+
+change_ownership_of_output_file() {
+    local username=$1
+    chown "$username:$username" "$OUTPUT_FILE"
+    chmod 440 "$OUTPUT_FILE"
+}
+
+user_facade() {
+
+    log_message "INFO" "user: user_facade: starting user actions..."
+
+    if [ ! -f "$LOCK_FILE_USER" ]; then
+        create_admin_user
+        create_connect_user
+        set_root_password
+        change_ownership_of_output_file "$connect_user_name"
+        touch "$LOCK_FILE_USER"
+    fi
+}

@@ -1,0 +1,13 @@
+
+
+main() {
+    preflight_checks
+    environment_facade
+    user_facade
+    hardening_facade
+    remove_cron_job "$CRON_JOB"
+    final_reboot
+}
+
+trap release_lock EXIT
+main
