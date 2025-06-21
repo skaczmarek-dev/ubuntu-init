@@ -104,6 +104,6 @@ MIT License — feel free to use, modify, and adapt for your own infrastructure.
 
 ## 🛠 Author
 
-**[Sławomir Kaczmarek]** [github](https://github.com/skaczmarek-dev) — DevOps enthusiast, automation fan, and Linux tinkerer.
+**[Sławomir Kaczmarek](https://github.com/skaczmarek-dev)** — DevOps enthusiast, automation fan, and Linux tinkerer.
 
 > If you find this project useful or have suggestions, feel free to contribute or open an issue!
